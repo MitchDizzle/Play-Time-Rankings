@@ -2,9 +2,10 @@
 #include <sdktools>
 #include <clientprefs>
 #include <scp>
-#define VERSION "0.5"
+#define VERSION "1.0"
 
 new TotalTime[MAXPLAYERS+1];
+new PlayerTagNum[MAXPLAYERS+1] = {-1,...};
 new iTeam[MAXPLAYERS+1];
 
 new bool:bCountSpec;
@@ -39,7 +40,7 @@ public Plugin:myinfo =
 public OnPluginStart()
 {
 	c_GameTime = 	RegClientCookie("PlayTime", 	"PlayTime", CookieAccess_Private);
-	CreateTimer(1.0, CheckTime, _, TIMER_REPEAT);
+	CreateTimer(60.0, CheckTime, _, TIMER_REPEAT);
 	LoadConfig();
 	CountSpecs = CreateConVar("sm_playtime_countspec", "0", "Addtime if the players are in spec?");
 	AllowT = CreateConVar("sm_playtime_count2", "1", "Addtime if the players are in Terrorist/Red?");
@@ -61,10 +62,7 @@ public OnPluginStart()
 		if(IsClientInGame(client))
 		{
 			iTeam[client] = GetClientTeam(client);
-			if(AreClientCookiesCached(client))
-			{
-				OnClientCookiesCached(client);
-			}
+			GetPlayerSettings(client);
 		}
 		else
 		{
@@ -126,14 +124,26 @@ LoadConfig() {
 				KvGetString(kvs, "color", TagHandler[TagCount][Color], 10);
 				TagHandler[TagCount][PlayTimeNeeded] = KvGetNum(kvs, "playtime", 0);
 				ReplaceString(TagHandler[TagCount][Color], 32, "#", "");
-				//PrintToServer("Tag: %s\n  Color: %s\n  Time: %i", TagHandler[TagCount][Tag], TagHandler[TagCount][Color], TagHandler[TagCount][PlayTimeNeeded]);
 				TagCount++;
 			} while (KvGotoNextKey(kvs));
 		}
 	}
 	CloseHandle(kvs);
 }
-
+FindPlayerTagNum(client)
+{
+	if(TagCount > 0)
+	{
+		for(new X = 0; X < TagCount; X++)
+		{
+			if(TagHandler[X][PlayTimeNeeded] <= TotalTime[client])
+			{
+				PlayerTagNum[client] = X;
+				break;
+			}
+		}
+	}
+}
 public Action:CheckTime(Handle:timer)
 {
 	for(new client = 1; client <= MaxClients; client++)
@@ -143,7 +153,7 @@ public Action:CheckTime(Handle:timer)
 			if(((iTeam[client] > 2) && bCountSpec) || ((iTeam[client] == 2) && bCountT) || ((iTeam[client] == 3) && bCountCT))
 			{
 				TotalTime[client]++;
-				//PrintToChat(client, "Total Time: %i", TotalTime[client]);
+				FindPlayerTagNum(client);
 			}
 		}
 	}
@@ -172,7 +182,7 @@ public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:me
 	{
 		for(new X = 0; X < TagCount; X++)
 		{
-			if(((TagHandler[X][PlayTimeNeeded])*60) <= TotalTime[author])
+			if(TagHandler[X][PlayTimeNeeded] <= TotalTime[author])
 			{
 				TagNum = X;
 				break;
@@ -184,6 +194,9 @@ public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:me
 		return Plugin_Continue;
 	}
 	//This is pretty much Dr.McKay's Customchat color code, just replaced variables.
+	//Tag:
+	new String:TagColor[16];
+	new String:NameColor[16];
 	if(strlen(TagHandler[TagNum][Tag]) > 0)
 	{
 		if(StrEqual(TagHandler[TagNum][Color], "T", false))
@@ -212,4 +225,90 @@ public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:me
 		}
 	}
 	return Plugin_Changed;
+}
+
+public SQLCallback_Connect(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+	if (hndl == INVALID_HANDLE)
+	{
+		SetFailState("Error connecting to database. %s", error);
+	} else {
+		g_hDatabase = hndl;
+		new String:BufferQuery[512];
+		Format(BufferQuery, sizeof(BufferQuery), "CREATE TABLE IF NOT EXISTS `playtimedata` (`steamid` varchar(32) NOT NULL, `playtime` int(11) DEFAULT 0)");
+		SQL_TQuery(g_hDatabase, SQLCallback_Enabled, BufferQuery);
+	}
+}
+public SQLCallback_Enabled(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+	if (hndl == INVALID_HANDLE)
+	{
+		SetFailState("Error connecting to database. %s", error);
+	} else {
+		SQL_DBLoaded = true;
+		DefaultAll();
+	}
+}
+GetPlayerSettings(client=0)
+{
+	if(client)
+	{
+		if(SQL_DBLoaded)
+		{
+			new String:authid[32];
+			new String:query[256];
+			GetClientAuthString(client, authid, sizeof(authid));
+			Format(query, sizeof(query), "SELECT * FROM `playtimedata` WHERE steamid=\"%s\"", authid);
+			SQL_TQuery(g_hDatabase, SQLCallback_GetPlayer, query, GetClientUserId(client));
+		}
+	}
+}
+
+SavePlayerSettings(client=0)
+{
+	if(client)
+	{
+		if(SQL_DBLoaded)
+		{
+			new String:query[256];
+			new String:authid[32];
+			GetClientAuthString(client, authid, sizeof(authid));
+			Format(query, sizeof(query), "UPDATE `playtimedata` SET playtime=%i  WHERE steamid=\"%s\"", TotalTime[client], authid);
+			SQL_TQuery(g_hDatabase, SQLCallback_Void, query);
+		}
+	}
+}
+public SQLCallback_GetPlayer(Handle:owner, Handle:hndl, const String:error[], any:userid)
+{
+	if (hndl == INVALID_HANDLE)
+	{
+		SetFailState("Error. %s", error);
+	} else {
+		new client = GetClientOfUserId(userid);
+		if(client == 0)
+			return;
+		
+		if(SQL_GetRowCount(hndl)>=1)
+		{
+			SQL_FetchRow(hndl);
+			TotalTime[client] = SQL_FetchInt(hndl, 1);
+			FindPlayerTagNum(client);
+		}
+		else
+		{
+			new String:query[256];
+			new String:authid[32];
+			GetClientAuthString(client, authid, sizeof(authid));
+			Format(query, sizeof(query), "INSERT INTO `playtimedata` (steamid, playtime) VALUES(\"%s\", 0)", authid);
+			SQL_TQuery(g_hDatabase, SQLCallback_Void, query, userid);
+		}
+	}
+
+}
+public SQLCallback_Void(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+	if (hndl == INVALID_HANDLE)
+	{
+		LogError("Error. %s", error);
+	}
 }
