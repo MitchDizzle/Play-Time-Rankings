@@ -2,7 +2,7 @@
 #include <sdktools>
 #include <clientprefs>
 #include <scp>
-#define VERSION "1.0"
+#define VERSION "1.01"
 
 new TotalTime[MAXPLAYERS+1];
 new PlayerTagNum[MAXPLAYERS+1] = {-1,...};
@@ -16,7 +16,12 @@ new bool:bCountT;
 enum Tags
 {
 	String:Tag[32],
-	String:Color[10],
+	String:TagC[10],
+	//String:TagC2[10],
+	//String:NameC[10],
+	//String:NameC2[10],
+	//String:TextC[10],
+	//String:TextC2[10], ToDo: add name color, text color, and team checking differences.
 	PlayTimeNeeded
 }
 new TagHandler[MAXTAGS+1][Tags];
@@ -107,7 +112,7 @@ LoadConfig() {
 	for(new X = 0; X < MAXTAGS; X++)
 	{
 		strcopy(TagHandler[X][Tag], 32, "");
-		strcopy(TagHandler[X][Color], 10, "");
+		strcopy(TagHandler[X][TagC], 10, "");
 		TagHandler[X][PlayTimeNeeded] = 0;
 	}
 	new Handle:kvs = CreateKeyValues("TagConfig");
@@ -121,9 +126,9 @@ LoadConfig() {
 			do
 			{
 				KvGetSectionName(kvs, TagHandler[TagCount][Tag], 32);
-				KvGetString(kvs, "color", TagHandler[TagCount][Color], 10);
+				KvGetString(kvs, "color", TagHandler[TagCount][TagC], 10);
 				TagHandler[TagCount][PlayTimeNeeded] = KvGetNum(kvs, "playtime", 0);
-				ReplaceString(TagHandler[TagCount][Color], 32, "#", "");
+				ReplaceString(TagHandler[TagCount][TagC], 32, "#", "");
 				TagCount++;
 			} while (KvGotoNextKey(kvs));
 		}
@@ -196,33 +201,23 @@ public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:me
 	//This is pretty much Dr.McKay's Customchat color code, just replaced variables.
 	//Tag:
 	new String:TagColor[16];
-	new String:NameColor[16];
+	//new String:TagText[48];
+	//new String:NameColor[16];
 	if(strlen(TagHandler[TagNum][Tag]) > 0)
 	{
-		if(StrEqual(TagHandler[TagNum][Color], "T", false))
-		{
-			Format(name, MAXLENGTH_NAME, "\x03%s %s", TagHandler[TagNum][Tag], name);
-		}
-		else if(StrEqual(TagHandler[TagNum][Color], "G", false))
-		{
-			Format(name, MAXLENGTH_NAME, "\x04%s \x03%s", TagHandler[TagNum][Tag], name);
-		}
-		else if(StrEqual(TagHandler[TagNum][Color], "O", false))
-		{
-			Format(name, MAXLENGTH_NAME, "\x05%s \x03%s", TagHandler[TagNum][Tag], name);
-		}
-		else if(strlen(TagHandler[TagNum][Color]) == 6)
-		{
-			Format(name, MAXLENGTH_NAME, "\x07%s%s \x03%s", TagHandler[TagNum][Color], TagHandler[TagNum][Tag], name);
-		}
-		else if(strlen(TagHandler[TagNum][Color]) == 8) 
-		{
-			Format(name, MAXLENGTH_NAME, "\x08%s%s \x03%s", TagHandler[TagNum][Color], TagHandler[TagNum][Tag], name);
-		}
+		if(StrEqual(TagHandler[TagNum][TagC], "T", false))
+			Format(TagColor, sizeof(TagColor), "\x03");
+		else if(StrEqual(TagHandler[TagNum][TagC], "G", false))
+			Format(TagColor, sizeof(TagColor), "\x04");
+		else if(StrEqual(TagHandler[TagNum][TagC], "O", false))
+			Format(TagColor, sizeof(TagColor), "\x05");
+		else if(strlen(TagHandler[TagNum][TagC]) == 6)
+			Format(TagColor, sizeof(TagColor), "\x07%s", TagHandler[TagNum][TagC]);
+		else if(strlen(TagHandler[TagNum][TagC]) == 8)
+			Format(TagColor, sizeof(TagColor), "\x08%s", TagHandler[TagNum][TagC]);
 		else
-		{
-			Format(name, MAXLENGTH_NAME, "\x01%s \x03%s", TagHandler[TagNum][Tag], name);
-		}
+			Format(TagColor, sizeof(TagColor), "\x01");
+		Format(name, MAXLENGTH_NAME, "%s%s \x03%s",  TagColor, TagHandler[TagNum][Tag], name);
 	}
 	return Plugin_Changed;
 }
