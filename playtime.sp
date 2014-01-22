@@ -2,7 +2,7 @@
 #include <sdktools>
 #include <clientprefs>
 #include <scp>
-#define VERSION "1.01"
+#define VERSION "2.0"
 
 new TotalTime[MAXPLAYERS+1];
 new PlayerTagNum[MAXPLAYERS+1] = {-1,...};
@@ -25,7 +25,7 @@ enum Tags
 	String:NameC2[16],
 	bool:NamTeamC,
 	String:TextC[16],
-	String:TextC2[16], //ToDo: add name color, text color, and team checking differences.
+	String:TextC2[16],
 	bool:TexTeamC,
 	PlayTimeNeeded
 }
@@ -62,7 +62,7 @@ public OnPluginStart()
 
 	HookEvent("player_team", Event_Team);
 
-	SQL_TConnect(SQLCallback_Connect, "playtime");
+	SQL_TConnect(SQLCallback_Connect, "storage-local");
 
 	CreateConVar("playtime_version", VERSION, "Tag Ranking Version", FCVAR_DONTRECORD|FCVAR_NOTIFY|FCVAR_CHEAT);	
 	for(new client = 1; client <= MaxClients; client++)
@@ -273,7 +273,7 @@ public SQLCallback_Connect(Handle:owner, Handle:hndl, const String:error[], any:
 		SetFailState("Error connecting to database. %s", error);
 	} else {
 		g_hDatabase = hndl;
-		new String:BufferQuery[512];
+		decl String:BufferQuery[512];
 		Format(BufferQuery, sizeof(BufferQuery), "CREATE TABLE IF NOT EXISTS `playtimedata` (`steamid` varchar(32) NOT NULL, `playtime` int(11) DEFAULT 0)");
 		SQL_TQuery(g_hDatabase, SQLCallback_Enabled, BufferQuery);
 	}
@@ -289,9 +289,9 @@ public SQLCallback_Enabled(Handle:owner, Handle:hndl, const String:error[], any:
 	}
 }
 
-GetPlayerSettings(client=0)
+GetPlayerSettings(client)
 {
-	if(client)
+	if(IsClientInGame(client))
 	{
 		if(SQL_DBLoaded)
 		{
@@ -304,18 +304,15 @@ GetPlayerSettings(client=0)
 	}
 }
 
-SavePlayerSettings(client=0)
+SavePlayerSettings(client)
 {
-	if(client)
+	if(SQL_DBLoaded)
 	{
-		if(SQL_DBLoaded)
-		{
-			new String:query[256];
-			new String:authid[32];
-			GetClientAuthString(client, authid, sizeof(authid));
-			Format(query, sizeof(query), "UPDATE `playtimedata` SET playtime=%i  WHERE steamid=\"%s\"", TotalTime[client], authid);
-			SQL_TQuery(g_hDatabase, SQLCallback_Void, query);
-		}
+		new String:query[256];
+		new String:authid[32];
+		GetClientAuthString(client, authid, sizeof(authid));
+		Format(query, sizeof(query), "UPDATE `playtimedata` SET playtime=%i  WHERE steamid=\"%s\"", TotalTime[client], authid);
+		SQL_TQuery(g_hDatabase, SQLCallback_Void, query);
 	}
 }
 public SQLCallback_GetPlayer(Handle:owner, Handle:hndl, const String:error[], any:userid)
