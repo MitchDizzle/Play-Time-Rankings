@@ -11,6 +11,8 @@ new iTeam[MAXPLAYERS+1];
 new bool:bCountSpec;
 new bool:bCountCT;
 new bool:bCountT;
+new Handle:g_hDatabase = INVALID_HANDLE;
+new bool:SQL_DBLoaded = false;
 
 #define MAXTAGS 40
 enum Tags
@@ -27,8 +29,6 @@ enum Tags
 new TagHandler[MAXTAGS+1][Tags];
 new TagCount;
 
-new Handle:c_GameTime = INVALID_HANDLE;
-
 new Handle:CountSpecs = INVALID_HANDLE;
 new Handle:AllowCT = INVALID_HANDLE;
 new Handle:AllowT = INVALID_HANDLE;
@@ -44,7 +44,6 @@ public Plugin:myinfo =
 
 public OnPluginStart()
 {
-	c_GameTime = 	RegClientCookie("PlayTime", 	"PlayTime", CookieAccess_Private);
 	CreateTimer(60.0, CheckTime, _, TIMER_REPEAT);
 	LoadConfig();
 	CountSpecs = CreateConVar("sm_playtime_countspec", "0", "Addtime if the players are in spec?");
@@ -57,10 +56,11 @@ public OnPluginStart()
 	HookConVarChange(CountSpecs,	CvarUpdated);
 	HookConVarChange(AllowT,		CvarUpdated);
 	HookConVarChange(AllowCT,		CvarUpdated);
-	
+
 	HookEvent("player_team", Event_Team);
-	
-	
+
+	SQL_TConnect(SQLCallback_Connect, "playtime");
+
 	CreateConVar("playtime_version", VERSION, "Tag Ranking Version", FCVAR_DONTRECORD|FCVAR_NOTIFY|FCVAR_CHEAT);	
 	for(new client = 1; client <= MaxClients; client++)
 	{
@@ -75,6 +75,7 @@ public OnPluginStart()
 		}
 	}
 }
+
 public CvarUpdated(Handle:convar, const String:oldValue[], const String:newValue[])
 {
 	if(convar == CountSpecs)
@@ -90,6 +91,7 @@ public CvarUpdated(Handle:convar, const String:oldValue[], const String:newValue
 		bCountCT = GetConVarBool(AllowCT);
 	}
 }
+
 public OnPluginEnd()
 {
 	for(new client = 1; client <= MaxClients; client++)
@@ -105,8 +107,8 @@ public Action:Event_Team(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	iTeam[client] = GetEventInt(event, "team"); //GetClientTeam(client);
-	//PrintToChat(client, "Team: %i", iTeam[client]);
 }
+
 LoadConfig() {
 	
 	for(new X = 0; X < MAXTAGS; X++)
@@ -135,6 +137,18 @@ LoadConfig() {
 	}
 	CloseHandle(kvs);
 }
+
+DefaultAll()
+{
+	for(new client = 1; client <= MaxClients; client++)
+	{
+		if(IsClientInGame(client))
+		{
+			GetPlayerSettings(client);
+		}
+	}
+}
+
 FindPlayerTagNum(client)
 {
 	if(TagCount > 0)
@@ -149,6 +163,7 @@ FindPlayerTagNum(client)
 		}
 	}
 }
+
 public Action:CheckTime(Handle:timer)
 {
 	for(new client = 1; client <= MaxClients; client++)
@@ -164,36 +179,20 @@ public Action:CheckTime(Handle:timer)
 	}
 	return Plugin_Continue;
 }
-public OnClientCookiesCached(client)
-{
-	new String:TimeString[12]; //Big number, i know this is just incase people play for a year total.
-	GetClientCookie(client, c_GameTime, TimeString, sizeof(TimeString));
-	TotalTime[client]  = StringToInt(TimeString);
-}
+
 public OnClientDisconnect(client)
 {
-	if(AreClientCookiesCached(client))
-	{
-		new String:TimeString[12];
-		Format(TimeString, sizeof(TimeString), "%i", TotalTime[client]);
-		SetClientCookie(client, c_GameTime, TimeString);
-	}
+	SavePlayerSettings(client);
 }
-//Message Config, and Message Handling
+
+public OnClientAuthorized(client, const String:auth[])
+{
+	GetPlayerSettings(client);
+}
 
 public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:message[]) {
-	new TagNum = -1;
-	if(TagCount > 0)
-	{
-		for(new X = 0; X < TagCount; X++)
-		{
-			if(TagHandler[X][PlayTimeNeeded] <= TotalTime[author])
-			{
-				TagNum = X;
-				break;
-			}
-		}
-	}
+	//Message Config, and Message Handling
+	new TagNum = PlayerTagNum[author];
 	if(TagNum == -1)
 	{
 		return Plugin_Continue;
@@ -222,6 +221,9 @@ public Action:OnChatMessage(&author, Handle:recipients, String:name[], String:me
 	return Plugin_Changed;
 }
 
+//****************************//
+//     Ugly SQL Stuff D:      //
+//****************************//
 public SQLCallback_Connect(Handle:owner, Handle:hndl, const String:error[], any:data)
 {
 	if (hndl == INVALID_HANDLE)
@@ -244,6 +246,7 @@ public SQLCallback_Enabled(Handle:owner, Handle:hndl, const String:error[], any:
 		DefaultAll();
 	}
 }
+
 GetPlayerSettings(client=0)
 {
 	if(client)
